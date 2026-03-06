@@ -5,12 +5,13 @@ import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import type { NormalizedStats } from "@/lib/github";
 import { useGarden } from "@/components/GardenContext";
-import { generateGarden, type GardenSeed } from "@/lib/garden";
+import { buildGardenClusters, generateGarden, type GardenRepo, type GardenSeed } from "@/lib/garden";
 
 interface GitHubData {
   username: string;
   repoCount: number;
   languages: string[];
+  repos: GardenRepo[];
   stats: NormalizedStats;
 }
 
@@ -23,6 +24,7 @@ async function fetchGitHubData(token: string): Promise<GitHubData | null> {
       username: data.username,
       repoCount: data.repoCount,
       languages: data.languages,
+      repos: data.repos,
       stats: data.stats,
     };
   } catch {
@@ -32,7 +34,7 @@ async function fetchGitHubData(token: string): Promise<GitHubData | null> {
 
 export default function StatsPanel() {
   const { data: session, status } = useSession();
-  const { setGardenData, setIsLoading } = useGarden();
+  const { setGardenData, setIsLoading, selectedRepoName, setSelectedRepoName } = useGarden();
   const [data, setData] = useState<GitHubData | null>(null);
   const [loading, setLoading] = useState(false);
   const fetchedRef = useRef(false);
@@ -61,10 +63,12 @@ export default function StatsPanel() {
           repoCount: githubData.repoCount,
           languages: githubData.languages,
           plantCount,
+          repos: githubData.repos,
         };
         
         const plants = generateGarden(gardenSeed);
-        setGardenData(gardenSeed, plants);
+        const clusters = buildGardenClusters(plants);
+        setGardenData(gardenSeed, plants, clusters, githubData.repos);
       }
       
       setLoading(false);
@@ -158,6 +162,28 @@ export default function StatsPanel() {
                   >
                     {lang}
                   </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.repos.length > 0 && (
+            <div>
+              <h3 className="text-lg font-semibold text-white mb-3">Repositories</h3>
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {data.repos.map((repo) => (
+                  <button
+                    key={repo.name}
+                    onClick={() => setSelectedRepoName(repo.name)}
+                    className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${
+                      selectedRepoName === repo.name
+                        ? "bg-emerald-700/30 border-emerald-500 text-emerald-100"
+                        : "bg-zinc-800/50 border-zinc-700 text-zinc-200 hover:bg-zinc-700/60"
+                    }`}
+                  >
+                    <div className="font-medium truncate">{repo.name}</div>
+                    <div className="text-xs text-zinc-400 truncate">{repo.language ?? "Unknown language"}</div>
+                  </button>
                 ))}
               </div>
             </div>
