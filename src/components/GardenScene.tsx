@@ -1,8 +1,8 @@
 "use client";
 
 import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { PointerLockControls } from "@react-three/drei";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGarden } from "@/components/GardenContext";
 import type { GardenCluster, GardenPlant } from "@/lib/garden";
 import {
@@ -16,7 +16,9 @@ import {
   PlaneGeometry,
   Vector3,
 } from "three";
-import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+
+const GROUND_Y = -1.05;
+const EYE_Y = GROUND_Y + 1.1;
 
 function Terrain() {
   const geometry = useMemo(() => {
@@ -42,7 +44,7 @@ function Terrain() {
   }, []);
 
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.05, 0]} receiveShadow geometry={geometry}>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, GROUND_Y, 0]} receiveShadow geometry={geometry}>
       <meshStandardMaterial vertexColors roughness={0.96} metalness={0.02} />
     </mesh>
   );
@@ -64,8 +66,8 @@ function GrassTufts() {
       const pz = (z * 2 - 1) * 52;
       const height = 0.12 + Math.abs(Math.sin(seed * 0.3)) * 0.22;
 
-      dummy.position.set(px, -1.05 + height * 0.5, pz);
-      dummy.rotation.set((Math.sin(seed * 0.2) * 0.08), Math.sin(seed * 0.8) * Math.PI, Math.cos(seed * 0.4) * 0.08);
+      dummy.position.set(px, GROUND_Y + height * 0.5, pz);
+      dummy.rotation.set(Math.sin(seed * 0.2) * 0.08, Math.sin(seed * 0.8) * Math.PI, Math.cos(seed * 0.4) * 0.08);
       dummy.scale.set(1, height, 1);
       dummy.updateMatrix();
       data.push(dummy.matrix.clone());
@@ -171,7 +173,7 @@ function Plant({
     case "sphere":
       return (
         <group ref={rootRef} position={position} onPointerMove={handleHover} onPointerOver={handleHover} onPointerLeave={handleLeave}>
-          <mesh position={[0, 0.06, 0]} castShadow receiveShadow>
+          <mesh position={[0, 0.11, 0]} castShadow receiveShadow>
             <sphereGeometry args={[0.09, 6, 6]} />
             <meshStandardMaterial color="#597f3f" roughness={0.88} />
           </mesh>
@@ -209,11 +211,11 @@ function Plants({
 }) {
   if (plants.length === 0) {
     const fallbackPlants: GardenPlant[] = [
-      { position: [3.64, -1.05, 6.79], scale: 0.75, color: "#4d8dff", type: "cylinder", repoName: "starter-tree" },
-      { position: [-7.02, -1.05, -3.02], scale: 0.68, color: "#63b95b", type: "sphere", repoName: "starter-bush" },
-      { position: [2.25, -1.05, 7.84], scale: 0.7, color: "#f5d546", type: "cone", repoName: "starter-flower" },
-      { position: [-4.89, -1.05, -6.49], scale: 0.62, color: "#d97a34", type: "cylinder", repoName: "starter-rust" },
-      { position: [7.11, -1.05, 1.54], scale: 0.72, color: "#63b95b", type: "sphere", repoName: "starter-python" },
+      { position: [3.64, GROUND_Y, 6.79], scale: 0.75, color: "#4d8dff", type: "cylinder", repoName: "starter-tree" },
+      { position: [-7.02, GROUND_Y, -3.02], scale: 0.68, color: "#63b95b", type: "sphere", repoName: "starter-bush" },
+      { position: [2.25, GROUND_Y, 7.84], scale: 0.7, color: "#f5d546", type: "cone", repoName: "starter-flower" },
+      { position: [-4.89, GROUND_Y, -6.49], scale: 0.62, color: "#d97a34", type: "cylinder", repoName: "starter-rust" },
+      { position: [7.11, GROUND_Y, 1.54], scale: 0.72, color: "#63b95b", type: "sphere", repoName: "starter-python" },
     ];
 
     return (
@@ -234,40 +236,83 @@ function Plants({
   );
 }
 
-function CameraRig({
-  clusters,
-  selectedRepoName,
-  controlsRef,
-}: {
-  clusters: GardenCluster[];
-  selectedRepoName: string | null;
-  controlsRef: RefObject<OrbitControlsImpl | null>;
-}) {
+function ExplorerController({ clusters, selectedRepoName }: { clusters: GardenCluster[]; selectedRepoName: string | null }) {
   const { camera } = useThree();
-  const desiredTarget = useRef(new Vector3(0, 0, 0));
-  const desiredPosition = useRef(new Vector3(20, 15, 20));
+  const keysRef = useRef<Record<string, boolean>>({});
+  const targetPosRef = useRef<Vector3 | null>(null);
+  const lookAtRef = useRef<Vector3 | null>(null);
 
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      keysRef.current[event.code] = true;
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      keysRef.current[event.code] = false;
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedRepoName) return;
     const selected = clusters.find((cluster) => cluster.repoName === selectedRepoName);
-    if (!selected) {
-      desiredTarget.current.set(0, 0, 0);
-      desiredPosition.current.set(20, 15, 20);
+    if (!selected) return;
+
+    targetPosRef.current = new Vector3(selected.position[0] + 7, EYE_Y, selected.position[2] + 7);
+    lookAtRef.current = new Vector3(selected.position[0], EYE_Y - 0.2, selected.position[2]);
+  }, [clusters, selectedRepoName]);
+
+  useEffect(() => {
+    camera.position.set(0, EYE_Y, 16);
+  }, [camera]);
+
+  useFrame((_, delta) => {
+    if (targetPosRef.current) {
+      camera.position.lerp(targetPosRef.current, 0.08);
+      if (lookAtRef.current) {
+        camera.lookAt(lookAtRef.current);
+      }
+      if (camera.position.distanceTo(targetPosRef.current) < 0.35) {
+        targetPosRef.current = null;
+      }
       return;
     }
 
-    desiredTarget.current.set(selected.position[0], -0.2, selected.position[2]);
-    desiredPosition.current.set(selected.position[0] + 11, 9.5, selected.position[2] + 11);
-  }, [clusters, selectedRepoName]);
+    const up = new Vector3(0, 1, 0);
+    const forward = new Vector3();
+    const right = new Vector3();
+    const move = new Vector3();
 
-  useFrame(() => {
-    camera.position.lerp(desiredPosition.current, 0.06);
-    if (controlsRef.current) {
-      controlsRef.current.target.lerp(desiredTarget.current, 0.09);
-      controlsRef.current.update();
+    camera.getWorldDirection(forward);
+    forward.set(forward.x, 0, forward.z);
+    forward.normalize();
+
+    right.crossVectors(forward, up).normalize();
+
+    if (keysRef.current.KeyW) move.add(forward);
+    if (keysRef.current.KeyS) move.sub(forward);
+    if (keysRef.current.KeyA) move.sub(right);
+    if (keysRef.current.KeyD) move.add(right);
+
+    if (move.lengthSq() > 0) {
+      const speed = keysRef.current.ShiftLeft ? 10 : 6;
+      move.normalize().multiplyScalar(speed * delta);
+      camera.position.add(move);
     }
+
+    camera.position.set(
+      Math.max(-54, Math.min(54, camera.position.x)),
+      EYE_Y,
+      Math.max(-54, Math.min(54, camera.position.z))
+    );
   });
 
-  return null;
+  return <PointerLockControls />;
 }
 
 function Scene({
@@ -283,12 +328,10 @@ function Scene({
   onHover: (repoName: string, x: number, y: number) => void;
   onLeave: () => void;
 }) {
-  const controlsRef = useRef<OrbitControlsImpl>(null);
-
   return (
     <>
       <color attach="background" args={["#b8dbff"]} />
-      <fog attach="fog" args={["#a9cde8", 18, 75]} />
+      <fog attach="fog" args={["#a9cde8", 12, 65]} />
       <ambientLight intensity={0.64} color="#d7f0ff" />
       <directionalLight
         position={[20, 28, 10]}
@@ -309,22 +352,7 @@ function Scene({
       <Terrain />
       <GrassTufts />
       <Plants plants={plants} onHover={onHover} onLeave={onLeave} />
-      <CameraRig clusters={clusters} selectedRepoName={selectedRepoName} controlsRef={controlsRef} />
-      <OrbitControls
-        ref={controlsRef}
-        target={[0, 0.6, 0]}
-        enablePan={false}
-        enableZoom
-        enableRotate
-        autoRotate
-        autoRotateSpeed={0.2}
-        minDistance={10}
-        maxDistance={45}
-        minPolarAngle={Math.PI / 5}
-        maxPolarAngle={Math.PI / 2.02}
-        enableDamping
-        dampingFactor={0.08}
-      />
+      <ExplorerController clusters={clusters} selectedRepoName={selectedRepoName} />
     </>
   );
 }
@@ -357,9 +385,10 @@ export default function GardenScene() {
       {isLoading && <LoadingSpinner />}
       <Canvas
         shadows
-        camera={{ position: [20, 15, 20], fov: 45 }}
+        camera={{ position: [0, EYE_Y, 16], fov: 68 }}
         gl={{ antialias: true }}
         dpr={[1, 1.5]}
+        onPointerMissed={handleLeave}
         onCreated={({ gl }) => {
           gl.shadowMap.enabled = true;
           gl.shadowMap.type = PCFSoftShadowMap;
@@ -375,6 +404,9 @@ export default function GardenScene() {
           />
         </Suspense>
       </Canvas>
+      <div className="pointer-events-none absolute left-4 bottom-4 z-20 px-3 py-2 rounded-md bg-zinc-900/85 border border-zinc-700 text-zinc-100 text-xs">
+        Click scene to look around | WASD move | Shift sprint | Esc unlock cursor
+      </div>
       {tooltip && (
         <div
           className="pointer-events-none fixed z-20 px-3 py-2 rounded-md bg-zinc-900/90 border border-zinc-700 text-zinc-100 text-sm"

@@ -5,10 +5,17 @@ import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import type { NormalizedStats } from "@/lib/github";
 import { useGarden } from "@/components/GardenContext";
-import { buildGardenClusters, generateGarden, type GardenRepo, type GardenSeed } from "@/lib/garden";
+import {
+  buildGardenClusters,
+  generateGarden,
+  getLanguageGardenStyle,
+  type GardenRepo,
+  type GardenSeed,
+} from "@/lib/garden";
 
 interface GitHubData {
   username: string;
+  avatarUrl?: string;
   repoCount: number;
   languages: string[];
   repos: GardenRepo[];
@@ -22,6 +29,7 @@ async function fetchGitHubData(token: string): Promise<GitHubData | null> {
     if (data.error) return null;
     return {
       username: data.username,
+      avatarUrl: data.avatarUrl,
       repoCount: data.repoCount,
       languages: data.languages,
       repos: data.repos,
@@ -44,20 +52,20 @@ export default function StatsPanel() {
     if (!token || fetchedRef.current) return;
 
     let cancelled = false;
-    
+
     const doFetch = async () => {
       setLoading(true);
       setIsLoading(true);
-      
+
       const githubData = await fetchGitHubData(token);
-      
+
       if (cancelled) return;
-      
+
       if (githubData) {
         setData(githubData);
-        
+
         const plantCount = Math.min(githubData.repoCount * 5, 200);
-        
+
         const gardenSeed: GardenSeed = {
           username: githubData.username,
           repoCount: githubData.repoCount,
@@ -65,12 +73,12 @@ export default function StatsPanel() {
           plantCount,
           repos: githubData.repos,
         };
-        
+
         const plants = generateGarden(gardenSeed);
         const clusters = buildGardenClusters(plants);
         setGardenData(gardenSeed, plants, clusters, githubData.repos);
       }
-      
+
       setLoading(false);
       setIsLoading(false);
       fetchedRef.current = true;
@@ -110,18 +118,18 @@ export default function StatsPanel() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {session.user?.image && (
+          {(data?.avatarUrl || session.user?.image) && (
             <Image
-              src={session.user.image}
-              alt={session.user.name ?? "User"}
+              src={data?.avatarUrl ?? session.user?.image ?? ""}
+              alt={session.user?.name ?? data?.username ?? "User"}
               width={40}
               height={40}
-              className="rounded-full"
+              className="rounded-full border border-zinc-700"
             />
           )}
           <div>
-            <div className="font-semibold text-white">{session.user?.name}</div>
-            <div className="text-sm text-zinc-400">@{session.user?.email}</div>
+            <div className="font-semibold text-white">{session.user?.name ?? data?.username}</div>
+            <div className="text-sm text-zinc-400">@{data?.username ?? session.user?.email}</div>
           </div>
         </div>
         <button
@@ -142,7 +150,9 @@ export default function StatsPanel() {
         <>
           <div className="p-4 bg-indigo-900/30 border border-indigo-800 rounded-lg">
             <div className="text-2xl font-bold text-white">@{data.username}</div>
-            <div className="text-zinc-400">{data.repoCount} repositories → {Math.min(data.repoCount * 5, 200)} plants</div>
+            <div className="text-zinc-400">
+              {data.repoCount} repositories -&gt; {Math.min(data.repoCount * 5, 200)} plants
+            </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -153,16 +163,26 @@ export default function StatsPanel() {
 
           {data.languages.length > 0 && (
             <div>
-              <h3 className="text-lg font-semibold text-white mb-3">Languages</h3>
-              <div className="flex flex-wrap gap-2">
-                {data.languages.map((lang) => (
-                  <span
-                    key={lang}
-                    className="px-3 py-1 bg-zinc-800 text-zinc-300 text-sm rounded-full"
-                  >
-                    {lang}
-                  </span>
-                ))}
+              <h3 className="text-lg font-semibold text-white mb-3">Language Legend</h3>
+              <div className="space-y-2">
+                {data.languages.map((lang) => {
+                  const style = getLanguageGardenStyle(lang);
+                  return (
+                    <div
+                      key={lang}
+                      className="flex items-center justify-between gap-2 px-3 py-2 bg-zinc-800/70 text-zinc-200 text-sm rounded-lg border border-zinc-700"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="inline-block w-3 h-3 rounded-full border border-zinc-500"
+                          style={{ backgroundColor: style.color }}
+                        />
+                        <span className="truncate">{lang}</span>
+                      </div>
+                      <span className="text-xs text-zinc-400 uppercase tracking-wide">{style.type}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

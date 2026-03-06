@@ -84,6 +84,26 @@ export function seededRandom(seed: number): () => number {
 }
 
 function styleForLanguage(language: string, random: () => number): { color: string; type: PlantType } {
+  const legendStyle = getLanguageGardenStyle(language);
+  if (legendStyle.type !== 'mixed') {
+    return { color: legendStyle.color, type: legendStyle.type };
+  }
+  if (language === 'Rust') {
+    const rustTypes: PlantType[] = ['cone', 'cylinder', 'sphere'];
+    return {
+      color: legendStyle.color,
+      type: rustTypes[Math.floor(random() * rustTypes.length)],
+    };
+  }
+
+  const types: PlantType[] = ['cone', 'cylinder', 'sphere'];
+  return {
+    color: getLanguageColor(language),
+    type: types[Math.floor(random() * types.length)],
+  };
+}
+
+export function getLanguageGardenStyle(language: string): { color: string; type: PlantType | 'mixed' } {
   if (language === 'JavaScript') {
     return { color: '#f5d546', type: 'cone' };
   }
@@ -94,18 +114,10 @@ function styleForLanguage(language: string, random: () => number): { color: stri
     return { color: '#4d8dff', type: 'cylinder' };
   }
   if (language === 'Rust') {
-    const rustTypes: PlantType[] = ['cone', 'cylinder', 'sphere'];
-    return {
-      color: '#d97a34',
-      type: rustTypes[Math.floor(random() * rustTypes.length)],
-    };
+    return { color: '#d97a34', type: 'mixed' };
   }
 
-  const types: PlantType[] = ['cone', 'cylinder', 'sphere'];
-  return {
-    color: getLanguageColor(language),
-    type: types[Math.floor(random() * types.length)],
-  };
+  return { color: getLanguageColor(language), type: 'mixed' };
 }
 
 export function generateGarden(seed: GardenSeed): GardenPlant[] {

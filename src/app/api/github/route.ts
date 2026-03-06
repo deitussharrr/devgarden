@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
     const repos: GitHubRepo[] = reposData.map(normalizeRepo);
 
     const username = userData.login as string;
+    const avatarUrl = userData.avatar_url as string | undefined;
 
     const commits: GitHubCommit[] = [];
     const repoCommits = await Promise.all(
@@ -58,6 +59,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       username,
+      avatarUrl,
       repoCount: repos.length,
       languages,
       repos,
