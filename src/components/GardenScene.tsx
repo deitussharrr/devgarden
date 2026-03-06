@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { PointerLockControls } from "@react-three/drei";
+import { OrbitControls, PointerLockControls } from "@react-three/drei";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGarden } from "@/components/GardenContext";
 import type { GardenCluster, GardenPlant } from "@/lib/garden";
@@ -16,6 +16,7 @@ import {
   PlaneGeometry,
   Vector3,
 } from "three";
+import type { OrbitControls as OrbitControlsImpl, PointerLockControls as PointerLockControlsImpl } from "three-stdlib";
 
 const GROUND_Y = -1.05;
 const EYE_Y = GROUND_Y + 1.1;
@@ -236,14 +237,35 @@ function Plants({
   );
 }
 
-function ExplorerController({ clusters, selectedRepoName }: { clusters: GardenCluster[]; selectedRepoName: string | null }) {
+function ExplorerController({
+  clusters,
+  selectedRepoName,
+  isLocked,
+  setIsLocked,
+  orbitRef,
+}: {
+  clusters: GardenCluster[];
+  selectedRepoName: string | null;
+  isLocked: boolean;
+  setIsLocked: (locked: boolean) => void;
+  orbitRef: React.RefObject<OrbitControlsImpl | null>;
+}) {
   const { camera } = useThree();
+  const pointerRef = useRef<PointerLockControlsImpl>(null);
   const keysRef = useRef<Record<string, boolean>>({});
   const targetPosRef = useRef<Vector3 | null>(null);
   const lookAtRef = useRef<Vector3 | null>(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code === "Escape") {
+        event.preventDefault();
+        if (document.pointerLockElement) {
+          document.exitPointerLock();
+        } else {
+          pointerRef.current?.lock();
+        }
+      }
       keysRef.current[event.code] = true;
     };
     const onKeyUp = (event: KeyboardEvent) => {
@@ -310,9 +332,20 @@ function ExplorerController({ clusters, selectedRepoName }: { clusters: GardenCl
       EYE_Y,
       Math.max(-54, Math.min(54, camera.position.z))
     );
+
+    if (!isLocked && orbitRef.current) {
+      orbitRef.current.target.set(camera.position.x, EYE_Y - 0.2, camera.position.z - 4);
+      orbitRef.current.update();
+    }
   });
 
-  return <PointerLockControls />;
+  return (
+    <PointerLockControls
+      ref={pointerRef}
+      onLock={() => setIsLocked(true)}
+      onUnlock={() => setIsLocked(false)}
+    />
+  );
 }
 
 function Scene({
@@ -321,13 +354,19 @@ function Scene({
   selectedRepoName,
   onHover,
   onLeave,
+  isLocked,
+  setIsLocked,
 }: {
   plants: GardenPlant[];
   clusters: GardenCluster[];
   selectedRepoName: string | null;
   onHover: (repoName: string, x: number, y: number) => void;
   onLeave: () => void;
+  isLocked: boolean;
+  setIsLocked: (locked: boolean) => void;
 }) {
+  const orbitRef = useRef<OrbitControlsImpl>(null);
+
   return (
     <>
       <color attach="background" args={["#b8dbff"]} />
@@ -352,7 +391,26 @@ function Scene({
       <Terrain />
       <GrassTufts />
       <Plants plants={plants} onHover={onHover} onLeave={onLeave} />
-      <ExplorerController clusters={clusters} selectedRepoName={selectedRepoName} />
+      <OrbitControls
+        ref={orbitRef}
+        enabled={!isLocked}
+        enablePan={false}
+        enableZoom
+        enableRotate
+        enableDamping
+        dampingFactor={0.08}
+        minDistance={2}
+        maxDistance={18}
+        minPolarAngle={Math.PI / 6}
+        maxPolarAngle={Math.PI / 2.05}
+      />
+      <ExplorerController
+        clusters={clusters}
+        selectedRepoName={selectedRepoName}
+        isLocked={isLocked}
+        setIsLocked={setIsLocked}
+        orbitRef={orbitRef}
+      />
     </>
   );
 }
@@ -371,6 +429,7 @@ function LoadingSpinner() {
 export default function GardenScene() {
   const { gardenPlants, gardenClusters, selectedRepoName, isLoading } = useGarden();
   const [tooltip, setTooltip] = useState<{ name: string; x: number; y: number } | null>(null);
+  const [isLocked, setIsLocked] = useState(false);
 
   const handleHover = useCallback((repoName: string, x: number, y: number) => {
     setTooltip({ name: repoName, x, y });
@@ -401,11 +460,13 @@ export default function GardenScene() {
             selectedRepoName={selectedRepoName}
             onHover={handleHover}
             onLeave={handleLeave}
+            isLocked={isLocked}
+            setIsLocked={setIsLocked}
           />
         </Suspense>
       </Canvas>
       <div className="pointer-events-none absolute left-4 bottom-4 z-20 px-3 py-2 rounded-md bg-zinc-900/85 border border-zinc-700 text-zinc-100 text-xs">
-        Click scene to look around | WASD move | Shift sprint | Esc unlock cursor
+        Click scene to look around | WASD move | Shift sprint | Esc toggle cursor lock
       </div>
       {tooltip && (
         <div
