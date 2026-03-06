@@ -5,6 +5,7 @@ export interface GardenPlant {
   scale: number;
   color: string;
   type: PlantType;
+  language?: string;
 }
 
 export interface GardenSeed {
@@ -72,10 +73,7 @@ export function generateGarden(seed: GardenSeed): GardenPlant[] {
   const gardenSeed = generateSeed(seed.username + ':' + seed.repoCount);
   const random = seededRandom(gardenSeed);
 
-  const languageColors = seed.languages.map(lang => getLanguageColor(lang));
-  if (languageColors.length === 0) {
-    languageColors.push('#6366f1');
-  }
+  const languages = seed.languages.length > 0 ? seed.languages : ['Default'];
 
   const radius = 25;
   const plantTypes: PlantType[] = ['cone', 'cylinder', 'sphere'];
@@ -93,11 +91,29 @@ export function generateGarden(seed: GardenSeed): GardenPlant[] {
     const finalX = x + noiseX;
     const finalZ = z + noiseZ;
 
-    const colorIndex = Math.floor((Math.abs(Math.sin(i * 0.5 + gardenSeed)) * languageColors.length));
-    const color = languageColors[colorIndex % languageColors.length];
+    const languageIndex = Math.floor(Math.abs(Math.sin(i * 0.5 + gardenSeed)) * languages.length) % languages.length;
+    const language = languages[languageIndex];
 
-    const typeIndex = Math.floor((random() * plantTypes.length * (1 + repoCountFactor * 0.1))) % plantTypes.length;
-    const type = plantTypes[typeIndex];
+    let color = getLanguageColor(language);
+    let type: PlantType;
+
+    if (language === 'JavaScript') {
+      color = '#f5d546';
+      type = 'cone';
+    } else if (language === 'Python') {
+      color = '#63b95b';
+      type = 'sphere';
+    } else if (language === 'TypeScript') {
+      color = '#4d8dff';
+      type = 'cylinder';
+    } else if (language === 'Rust') {
+      color = '#d97a34';
+      const rustTypeIndex = Math.floor((random() * plantTypes.length * (1 + repoCountFactor * 0.1))) % plantTypes.length;
+      type = plantTypes[rustTypeIndex];
+    } else {
+      const typeIndex = Math.floor((random() * plantTypes.length * (1 + repoCountFactor * 0.1))) % plantTypes.length;
+      type = plantTypes[typeIndex];
+    }
 
     const scale = 0.5 + random() * 1.0;
     const y = -0.5 + scale * 0.5;
@@ -107,6 +123,7 @@ export function generateGarden(seed: GardenSeed): GardenPlant[] {
       scale,
       color,
       type,
+      language,
     });
   }
 

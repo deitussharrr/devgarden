@@ -1,84 +1,107 @@
 "use client";
 
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Sky, Stars } from "@react-three/drei";
-import { Suspense } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { OrbitControls } from "@react-three/drei";
+import { Suspense, useMemo, useRef } from "react";
 import { useGarden } from "@/components/GardenContext";
 import type { GardenPlant } from "@/lib/garden";
+import { Color, Float32BufferAttribute, Group, PCFSoftShadowMap, PlaneGeometry } from "three";
 
 function Terrain() {
+  const geometry = useMemo(() => {
+    const ground = new PlaneGeometry(110, 110, 48, 48);
+    const positions = ground.attributes.position;
+    const colors: number[] = [];
+    const edgeColor = new Color("#5f9f55");
+    const centerColor = new Color("#79bf67");
+    const darkPatchColor = new Color("#4b8346");
+    const mixed = new Color();
+
+    for (let i = 0; i < positions.count; i++) {
+      const x = positions.getX(i);
+      const y = positions.getY(i);
+      const radial = Math.min(1, Math.sqrt(x * x + y * y) / 58);
+      const wave = (Math.sin(x * 0.12) * Math.cos(y * 0.1) + 1) * 0.5;
+      mixed.copy(centerColor).lerp(edgeColor, radial * 0.85).lerp(darkPatchColor, wave * 0.12);
+      colors.push(mixed.r, mixed.g, mixed.b);
+    }
+
+    ground.setAttribute("color", new Float32BufferAttribute(colors, 3));
+    return ground;
+  }, []);
+
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1, 0]} receiveShadow>
-      <planeGeometry args={[100, 100, 64, 64]} />
-      <meshStandardMaterial
-        color="#1a1a2e"
-        wireframe={false}
-        roughness={0.8}
-        metalness={0.2}
-      />
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.05, 0]} receiveShadow geometry={geometry}>
+      <meshStandardMaterial vertexColors roughness={0.95} metalness={0.03} />
     </mesh>
   );
 }
 
-function GridLines() {
-  return (
-    <gridHelper
-      args={[100, 50, "#3b3b5c", "#2a2a4a"]}
-      position={[0, -0.99, 0]}
-    />
-  );
-}
-
 function Plant({ position, scale, color, type }: GardenPlant) {
-  const stemColor = "#4a3728";
-  const foliageColor = color;
-  
+  const rootRef = useRef<Group>(null);
+  const growthRef = useRef(0);
+  const swayPhase = useMemo(() => ((position[0] * 0.41 + position[2] * 0.29) % 1) * Math.PI * 2, [position]);
+  const swayStrength = type === "cylinder" ? 0.08 : type === "cone" ? 0.11 : 0.06;
+
+  useFrame((state, delta) => {
+    if (!rootRef.current) return;
+    growthRef.current = Math.min(1, growthRef.current + delta * 0.55);
+    const easedGrowth = 1 - Math.pow(1 - growthRef.current, 3);
+    const sway = Math.sin(state.clock.elapsedTime * 1.15 + swayPhase) * swayStrength;
+    rootRef.current.rotation.z = sway;
+    rootRef.current.scale.setScalar(Math.max(0.001, scale * easedGrowth));
+  });
+
+  const stemColor = "#6d4b34";
+  const foliageColor = new Color(color).offsetHSL(0, 0.04, 0.02).getStyle();
+  const blossomColor = new Color(color).offsetHSL(0.01, 0.08, 0.12).getStyle();
+
   switch (type) {
-    case 'cone':
+    case "cone":
       return (
-        <group position={position} scale={scale}>
-          <mesh position={[0, 0.3, 0]} castShadow>
-            <cylinderGeometry args={[0.08, 0.12, 0.6, 8]} />
+        <group ref={rootRef} position={position}>
+          <mesh position={[0, 0.15, 0]} castShadow receiveShadow>
+            <coneGeometry args={[0.06, 0.3, 6]} />
             <meshStandardMaterial color={stemColor} roughness={0.9} />
           </mesh>
-          <mesh position={[0, 0.8, 0]} castShadow>
-            <coneGeometry args={[0.4, 0.8, 8]} />
-            <meshStandardMaterial color={foliageColor} roughness={0.7} />
+          <mesh position={[0, 0.38, 0]} castShadow receiveShadow>
+            <sphereGeometry args={[0.11, 7, 7]} />
+            <meshStandardMaterial color={blossomColor} roughness={0.55} />
           </mesh>
         </group>
       );
-    case 'cylinder':
+    case "cylinder":
       return (
-        <group position={position} scale={scale}>
-          <mesh position={[0, 0.25, 0]} castShadow>
-            <cylinderGeometry args={[0.06, 0.1, 0.5, 8]} />
+        <group ref={rootRef} position={position}>
+          <mesh position={[0, 0.45, 0]} castShadow receiveShadow>
+            <cylinderGeometry args={[0.07, 0.1, 0.9, 8]} />
             <meshStandardMaterial color={stemColor} roughness={0.9} />
           </mesh>
-          <mesh position={[0, 0.65, 0]} castShadow>
-            <sphereGeometry args={[0.35, 8, 8]} />
-            <meshStandardMaterial color={foliageColor} roughness={0.7} />
+          <mesh position={[0, 1.02, 0]} castShadow receiveShadow>
+            <sphereGeometry args={[0.34, 10, 10]} />
+            <meshStandardMaterial color={foliageColor} roughness={0.62} />
           </mesh>
         </group>
       );
-    case 'sphere':
+    case "sphere":
       return (
-        <group position={position} scale={scale}>
-          <mesh position={[0, 0.15, 0]} castShadow>
-            <cylinderGeometry args={[0.05, 0.08, 0.3, 6]} />
-            <meshStandardMaterial color={stemColor} roughness={0.9} />
-          </mesh>
-          <group position={[0, 0.4, 0]}>
-            <mesh position={[0, 0, 0]} castShadow>
-              <sphereGeometry args={[0.25, 8, 8]} />
+        <group ref={rootRef} position={position}>
+          <group position={[0, 0.28, 0]}>
+            <mesh castShadow receiveShadow>
+              <sphereGeometry args={[0.24, 8, 8]} />
               <meshStandardMaterial color={foliageColor} roughness={0.7} />
             </mesh>
-            <mesh position={[0.15, 0.1, 0.1]} castShadow>
+            <mesh position={[0.18, 0.06, 0.12]} castShadow receiveShadow>
               <sphereGeometry args={[0.15, 6, 6]} />
-              <meshStandardMaterial color={foliageColor} roughness={0.7} />
+              <meshStandardMaterial color={foliageColor} roughness={0.72} />
             </mesh>
-            <mesh position={[-0.12, 0.08, -0.1]} castShadow>
-              <sphereGeometry args={[0.12, 6, 6]} />
-              <meshStandardMaterial color={foliageColor} roughness={0.7} />
+            <mesh position={[-0.16, 0.07, -0.11]} castShadow receiveShadow>
+              <sphereGeometry args={[0.14, 6, 6]} />
+              <meshStandardMaterial color={foliageColor} roughness={0.72} />
+            </mesh>
+            <mesh position={[0.02, 0.11, -0.16]} castShadow receiveShadow>
+              <sphereGeometry args={[0.13, 6, 6]} />
+              <meshStandardMaterial color={foliageColor} roughness={0.72} />
             </mesh>
           </group>
         </group>
@@ -88,19 +111,18 @@ function Plant({ position, scale, color, type }: GardenPlant) {
 
 function Plants({ plants }: { plants: GardenPlant[] }) {
   if (plants.length === 0) {
+    const fallbackPlants: GardenPlant[] = [
+      { position: [3.64, -0.1, 6.79], scale: 0.75, color: "#4d8dff", type: "cylinder" },
+      { position: [-7.02, -0.2, -3.02], scale: 0.68, color: "#63b95b", type: "sphere" },
+      { position: [2.25, -0.1, 7.84], scale: 0.7, color: "#f5d546", type: "cone" },
+      { position: [-4.89, -0.25, -6.49], scale: 0.62, color: "#d97a34", type: "cylinder" },
+      { position: [7.11, -0.2, 1.54], scale: 0.72, color: "#63b95b", type: "sphere" },
+    ];
+
     return (
       <group>
-        {[3.64, -7.02, 2.25, -4.89, 7.11].map((x, i) => (
-          <group key={i} position={[x, 0, [6.79, -3.02, 7.84, -6.49, 1.54][i]]} scale={0.8}>
-            <mesh position={[0, 0.3, 0]} castShadow>
-              <cylinderGeometry args={[0.08, 0.12, 0.6, 8]} />
-              <meshStandardMaterial color="#4a3728" roughness={0.9} />
-            </mesh>
-            <mesh position={[0, 0.8, 0]} castShadow>
-              <coneGeometry args={[0.4, 0.8, 8]} />
-              <meshStandardMaterial color="#6366f1" roughness={0.7} />
-            </mesh>
-          </group>
+        {fallbackPlants.map((plant, i) => (
+          <Plant key={i} {...plant} />
         ))}
       </group>
     );
@@ -118,24 +140,40 @@ function Plants({ plants }: { plants: GardenPlant[] }) {
 function Scene({ plants }: { plants: GardenPlant[] }) {
   return (
     <>
-      <ambientLight intensity={0.3} />
-      <directionalLight position={[10, 10, 5]} intensity={1} castShadow />
-      <pointLight position={[-10, 5, -10]} intensity={0.5} color="#6366f1" />
-      
-      <Sky sunPosition={[100, 20, 100]} />
-      <Stars radius={100} depth={50} count={2000} factor={4} fade speed={1} />
-      
+      <color attach="background" args={["#b8dbff"]} />
+      <fog attach="fog" args={["#a9cde8", 18, 75]} />
+      <ambientLight intensity={0.62} color="#d7f0ff" />
+      <directionalLight
+        position={[20, 28, 10]}
+        intensity={1.2}
+        color="#fff0d6"
+        castShadow
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
+        shadow-bias={-0.0002}
+        shadow-radius={4}
+        shadow-camera-near={5}
+        shadow-camera-far={120}
+        shadow-camera-left={-45}
+        shadow-camera-right={45}
+        shadow-camera-top={45}
+        shadow-camera-bottom={-45}
+      />
       <Terrain />
-      <GridLines />
       <Plants plants={plants} />
-      
       <OrbitControls
-        enablePan={true}
-        enableZoom={true}
-        enableRotate={true}
-        autoRotate={true}
-        autoRotateSpeed={0.5}
-        maxPolarAngle={Math.PI / 2.2}
+        target={[0, 0.6, 0]}
+        enablePan={false}
+        enableZoom
+        enableRotate
+        autoRotate
+        autoRotateSpeed={0.24}
+        minDistance={12}
+        maxDistance={45}
+        minPolarAngle={Math.PI / 5}
+        maxPolarAngle={Math.PI / 2.05}
+        enableDamping
+        dampingFactor={0.08}
       />
     </>
   );
@@ -160,8 +198,13 @@ export default function GardenScene() {
       {isLoading && <LoadingSpinner />}
       <Canvas
         shadows
-        camera={{ position: [15, 10, 15], fov: 50 }}
+        camera={{ position: [20, 15, 20], fov: 45 }}
         gl={{ antialias: true }}
+        dpr={[1, 1.5]}
+        onCreated={({ gl }) => {
+          gl.shadowMap.enabled = true;
+          gl.shadowMap.type = PCFSoftShadowMap;
+        }}
       >
         <Suspense fallback={null}>
           <Scene plants={gardenPlants} />
