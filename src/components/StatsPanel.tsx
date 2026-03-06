@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession, signIn, signOut } from "next-auth/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import type { NormalizedStats } from "@/lib/github";
 import { useGarden } from "@/components/GardenContext";
@@ -35,11 +35,11 @@ export default function StatsPanel() {
   const { setGardenData, setIsLoading } = useGarden();
   const [data, setData] = useState<GitHubData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [fetched, setFetched] = useState(false);
+  const fetchedRef = useRef(false);
 
   useEffect(() => {
     const token = session?.accessToken;
-    if (!token || fetched || loading) return;
+    if (!token || fetchedRef.current) return;
 
     let cancelled = false;
     
@@ -69,7 +69,7 @@ export default function StatsPanel() {
       
       setLoading(false);
       setIsLoading(false);
-      setFetched(true);
+      fetchedRef.current = true;
     };
 
     doFetch();
@@ -77,7 +77,8 @@ export default function StatsPanel() {
     return () => {
       cancelled = true;
     };
-  }, [session?.accessToken, fetched, loading, setGardenData, setIsLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.accessToken]);
 
   if (status === "loading") {
     return (

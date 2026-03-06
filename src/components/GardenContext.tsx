@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, ReactNode } from "react";
 import type { GardenSeed, GardenPlant } from "@/lib/garden";
 
 interface GardenContextType {
@@ -16,12 +16,16 @@ const GardenContext = createContext<GardenContextType | undefined>(undefined);
 export function GardenProvider({ children }: { children: ReactNode }) {
   const [gardenSeed, setGardenSeed] = useState<GardenSeed | null>(null);
   const [gardenPlants, setGardenPlants] = useState<GardenPlant[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoadingState] = useState(false);
 
-  const setGardenData = (seed: GardenSeed, plants: GardenPlant[]) => {
+  const setGardenData = useCallback((seed: GardenSeed, plants: GardenPlant[]) => {
     setGardenSeed(seed);
     setGardenPlants(plants);
-  };
+  }, []);
+
+  const setIsLoading = useCallback((loading: boolean) => {
+    setIsLoadingState(loading);
+  }, []);
 
   return (
     <GardenContext.Provider value={{ gardenSeed, gardenPlants, setGardenData, isLoading, setIsLoading }}>
