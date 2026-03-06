@@ -2,8 +2,7 @@
 
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Sky, Stars } from "@react-three/drei";
-import { Suspense, useMemo, useRef, useEffect } from "react";
-import * as THREE from "three";
+import { Suspense } from "react";
 import { useGarden } from "@/components/GardenContext";
 import type { GardenPlant } from "@/lib/garden";
 
@@ -31,23 +30,60 @@ function GridLines() {
 }
 
 function Plant({ position, scale, color, type }: GardenPlant) {
-  const geometry = useMemo(() => {
-    switch (type) {
-      case 'cone':
-        return new THREE.ConeGeometry(0.3, 1, 8);
-      case 'cylinder':
-        return new THREE.CylinderGeometry(0.2, 0.25, 0.8, 8);
-      case 'sphere':
-        return new THREE.SphereGeometry(0.35, 8, 8);
-    }
-  }, [type]);
-
-  return (
-    <mesh position={position} scale={scale} castShadow>
-      <primitive object={geometry} attach="geometry" />
-      <meshStandardMaterial color={color} roughness={0.6} metalness={0.3} />
-    </mesh>
-  );
+  const stemColor = "#4a3728";
+  const foliageColor = color;
+  
+  switch (type) {
+    case 'cone':
+      return (
+        <group position={position} scale={scale}>
+          <mesh position={[0, 0.3, 0]} castShadow>
+            <cylinderGeometry args={[0.08, 0.12, 0.6, 8]} />
+            <meshStandardMaterial color={stemColor} roughness={0.9} />
+          </mesh>
+          <mesh position={[0, 0.8, 0]} castShadow>
+            <coneGeometry args={[0.4, 0.8, 8]} />
+            <meshStandardMaterial color={foliageColor} roughness={0.7} />
+          </mesh>
+        </group>
+      );
+    case 'cylinder':
+      return (
+        <group position={position} scale={scale}>
+          <mesh position={[0, 0.25, 0]} castShadow>
+            <cylinderGeometry args={[0.06, 0.1, 0.5, 8]} />
+            <meshStandardMaterial color={stemColor} roughness={0.9} />
+          </mesh>
+          <mesh position={[0, 0.65, 0]} castShadow>
+            <sphereGeometry args={[0.35, 8, 8]} />
+            <meshStandardMaterial color={foliageColor} roughness={0.7} />
+          </mesh>
+        </group>
+      );
+    case 'sphere':
+      return (
+        <group position={position} scale={scale}>
+          <mesh position={[0, 0.15, 0]} castShadow>
+            <cylinderGeometry args={[0.05, 0.08, 0.3, 6]} />
+            <meshStandardMaterial color={stemColor} roughness={0.9} />
+          </mesh>
+          <group position={[0, 0.4, 0]}>
+            <mesh position={[0, 0, 0]} castShadow>
+              <sphereGeometry args={[0.25, 8, 8]} />
+              <meshStandardMaterial color={foliageColor} roughness={0.7} />
+            </mesh>
+            <mesh position={[0.15, 0.1, 0.1]} castShadow>
+              <sphereGeometry args={[0.15, 6, 6]} />
+              <meshStandardMaterial color={foliageColor} roughness={0.7} />
+            </mesh>
+            <mesh position={[-0.12, 0.08, -0.1]} castShadow>
+              <sphereGeometry args={[0.12, 6, 6]} />
+              <meshStandardMaterial color={foliageColor} roughness={0.7} />
+            </mesh>
+          </group>
+        </group>
+      );
+  }
 }
 
 function Plants({ plants }: { plants: GardenPlant[] }) {
@@ -55,17 +91,19 @@ function Plants({ plants }: { plants: GardenPlant[] }) {
     return (
       <group>
         {[3.64, -7.02, 2.25, -4.89, 7.11].map((x, i) => (
-          <mesh key={i} position={[x, [2.1, 3.8, 1.5, 4.2, 2.9][i], [6.79, -3.02, 7.84, -6.49, 1.54][i]]}>
-            <octahedronGeometry args={[0.3, 0]} />
-            <meshStandardMaterial color="#6366f1" emissive="#6366f1" emissiveIntensity={0.5} />
-          </mesh>
+          <group key={i} position={[x, 0, [6.79, -3.02, 7.84, -6.49, 1.54][i]]} scale={0.8}>
+            <mesh position={[0, 0.3, 0]} castShadow>
+              <cylinderGeometry args={[0.08, 0.12, 0.6, 8]} />
+              <meshStandardMaterial color="#4a3728" roughness={0.9} />
+            </mesh>
+            <mesh position={[0, 0.8, 0]} castShadow>
+              <coneGeometry args={[0.4, 0.8, 8]} />
+              <meshStandardMaterial color="#6366f1" roughness={0.7} />
+            </mesh>
+          </group>
         ))}
       </group>
     );
-  }
-
-  if (plants.length > 100) {
-    return <InstancedPlants plants={plants} />;
   }
 
   return (
@@ -73,72 +111,6 @@ function Plants({ plants }: { plants: GardenPlant[] }) {
       {plants.map((plant, i) => (
         <Plant key={i} {...plant} />
       ))}
-    </group>
-  );
-}
-
-function InstancedPlants({ plants }: { plants: GardenPlant[] }) {
-  const coneRef = useRef<THREE.InstancedMesh>(null);
-  const cylinderRef = useRef<THREE.InstancedMesh>(null);
-  const sphereRef = useRef<THREE.InstancedMesh>(null);
-
-  const conePlants = useMemo(() => plants.filter(p => p.type === 'cone'), [plants]);
-  const cylinderPlants = useMemo(() => plants.filter(p => p.type === 'cylinder'), [plants]);
-  const spherePlants = useMemo(() => plants.filter(p => p.type === 'sphere'), [plants]);
-
-  const tempObject = useMemo(() => new THREE.Object3D(), []);
-
-  useEffect(() => {
-    if (coneRef.current) {
-      conePlants.forEach((plant, i) => {
-        tempObject.position.set(...plant.position);
-        tempObject.scale.setScalar(plant.scale);
-        tempObject.updateMatrix();
-        coneRef.current!.setMatrixAt(i, tempObject.matrix);
-      });
-      coneRef.current.instanceMatrix.needsUpdate = true;
-    }
-  }, [conePlants, tempObject]);
-
-  useEffect(() => {
-    if (cylinderRef.current) {
-      cylinderPlants.forEach((plant, i) => {
-        tempObject.position.set(...plant.position);
-        tempObject.scale.setScalar(plant.scale);
-        tempObject.updateMatrix();
-        cylinderRef.current!.setMatrixAt(i, tempObject.matrix);
-      });
-      cylinderRef.current.instanceMatrix.needsUpdate = true;
-    }
-  }, [cylinderPlants, tempObject]);
-
-  useEffect(() => {
-    if (sphereRef.current) {
-      spherePlants.forEach((plant, i) => {
-        tempObject.position.set(...plant.position);
-        tempObject.scale.setScalar(plant.scale);
-        tempObject.updateMatrix();
-        sphereRef.current!.setMatrixAt(i, tempObject.matrix);
-      });
-      sphereRef.current.instanceMatrix.needsUpdate = true;
-    }
-  }, [spherePlants, tempObject]);
-
-  return (
-    <group>
-      {conePlants.length > 0 && (
-        <instancedMesh ref={coneRef} args={[new THREE.ConeGeometry(0.3, 1, 8), new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.3 }), conePlants.length]}>
-          {conePlants.map((p, i) => (
-            <meshStandardMaterial key={i} attach={`material-${i}`} color={p.color} />
-          ))}
-        </instancedMesh>
-      )}
-      {cylinderPlants.length > 0 && (
-        <instancedMesh ref={cylinderRef} args={[new THREE.CylinderGeometry(0.2, 0.25, 0.8, 8), new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.3 }), cylinderPlants.length]} />
-      )}
-      {spherePlants.length > 0 && (
-        <instancedMesh ref={sphereRef} args={[new THREE.SphereGeometry(0.35, 8, 8), new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.3 }), spherePlants.length]} />
-      )}
     </group>
   );
 }
