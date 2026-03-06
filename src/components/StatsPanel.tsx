@@ -1,15 +1,30 @@
 "use client";
 
 import { useSession, signIn, signOut } from "next-auth/react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import type { NormalizedStats } from "@/lib/github";
+import { useGarden } from "@/components/GardenContext";
+import { generateGarden, type GardenSeed } from "@/lib/garden";
 
-async function fetchGitHubData(token: string): Promise<NormalizedStats | null> {
+interface GitHubData {
+  username: string;
+  repoCount: number;
+  languages: string[];
+  stats: NormalizedStats;
+}
+
+async function fetchGitHubData(token: string): Promise<GitHubData | null> {
   try {
     const res = await fetch(`/api/github?token=${token}`);
     const data = await res.json();
-    return data.stats ?? null;
+    if (data.error) return null;
+    return {
+      username: data.username,
+      repoCount: data.repoCount,
+      languages: data.languages,
+      stats: data.stats,
+    };
   } catch {
     return null;
   }
@@ -17,19 +32,52 @@ async function fetchGitHubData(token: string): Promise<NormalizedStats | null> {
 
 export default function StatsPanel() {
   const { data: session, status } = useSession();
-  const [stats, setStats] = useState<NormalizedStats | null>(null);
+  const { setGardenData, setIsLoading } = useGarden();
+  const [data, setData] = useState<GitHubData | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetched, setFetched] = useState(false);
 
-  const handleFetchData = async () => {
-    if (!session?.accessToken || fetched) return;
+  useEffect(() => {
+    const token = session?.accessToken;
+    if (!token || fetched || loading) return;
+
+    let cancelled = false;
     
-    setLoading(true);
-    const data = await fetchGitHubData(session.accessToken);
-    setStats(data);
-    setLoading(false);
-    setFetched(true);
-  };
+    const doFetch = async () => {
+      setLoading(true);
+      setIsLoading(true);
+      
+      const githubData = await fetchGitHubData(token);
+      
+      if (cancelled) return;
+      
+      if (githubData) {
+        setData(githubData);
+        
+        const plantCount = Math.min(githubData.repoCount * 5, 200);
+        
+        const gardenSeed: GardenSeed = {
+          username: githubData.username,
+          repoCount: githubData.repoCount,
+          languages: githubData.languages,
+          plantCount,
+        };
+        
+        const plants = generateGarden(gardenSeed);
+        setGardenData(gardenSeed, plants);
+      }
+      
+      setLoading(false);
+      setIsLoading(false);
+      setFetched(true);
+    };
+
+    doFetch();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.accessToken, fetched, loading, setGardenData, setIsLoading]);
 
   if (status === "loading") {
     return (
@@ -42,7 +90,7 @@ export default function StatsPanel() {
   if (!session) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <div className="text-zinc-400 text-lg">Sign in with GitHub to view your stats</div>
+        <div className="text-zinc-400 text-lg">Sign in with GitHub to view your garden</div>
         <button
           onClick={() => signIn("github")}
           className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg font-medium transition-colors"
@@ -79,65 +127,36 @@ export default function StatsPanel() {
         </button>
       </div>
 
-      {!fetched && !loading && (
-        <button
-          onClick={handleFetchData}
-          className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors"
-        >
-          Load GitHub Stats
-        </button>
-      )}
-
       {loading && (
         <div className="flex items-center justify-center py-8">
-          <div className="text-zinc-400">Fetching GitHub data...</div>
+          <div className="text-zinc-400">Generating your garden...</div>
         </div>
       )}
 
-      {stats && (
+      {data && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <StatCard label="Repositories" value={stats.totalRepos} />
-            <StatCard label="Stars" value={stats.totalStars} />
-            <StatCard label="Forks" value={stats.totalForks} />
-            <StatCard label="Commits" value={stats.totalCommits} />
-            <StatCard label="Additions" value={stats.totalAdditions} />
-            <StatCard label="Deletions" value={stats.totalDeletions} />
+          <div className="p-4 bg-indigo-900/30 border border-indigo-800 rounded-lg">
+            <div className="text-2xl font-bold text-white">@{data.username}</div>
+            <div className="text-zinc-400">{data.repoCount} repositories → {Math.min(data.repoCount * 5, 200)} plants</div>
           </div>
 
-          {Object.keys(stats.languages).length > 0 && (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <StatCard label="Repositories" value={data.stats.totalRepos} />
+            <StatCard label="Stars" value={data.stats.totalStars} />
+            <StatCard label="Forks" value={data.stats.totalForks} />
+          </div>
+
+          {data.languages.length > 0 && (
             <div>
               <h3 className="text-lg font-semibold text-white mb-3">Languages</h3>
               <div className="flex flex-wrap gap-2">
-                {Object.entries(stats.languages)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([lang, count]) => (
-                    <span
-                      key={lang}
-                      className="px-3 py-1 bg-zinc-800 text-zinc-300 text-sm rounded-full"
-                    >
-                      {lang} ({count})
-                    </span>
-                  ))}
-              </div>
-            </div>
-          )}
-
-          {stats.topRepos.length > 0 && (
-            <div>
-              <h3 className="text-lg font-semibold text-white mb-3">Top Repositories</h3>
-              <div className="space-y-2">
-                {stats.topRepos.map((repo) => (
-                  <div
-                    key={repo.name}
-                    className="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg"
+                {data.languages.map((lang) => (
+                  <span
+                    key={lang}
+                    className="px-3 py-1 bg-zinc-800 text-zinc-300 text-sm rounded-full"
                   >
-                    <span className="text-zinc-300">{repo.name}</span>
-                    <div className="flex gap-4 text-sm">
-                      <span className="text-yellow-400">★ {repo.stars}</span>
-                      <span className="text-zinc-400">⌘ {repo.commits}</span>
-                    </div>
-                  </div>
+                    {lang}
+                  </span>
                 ))}
               </div>
             </div>

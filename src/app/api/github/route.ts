@@ -15,17 +15,23 @@ export async function GET(request: NextRequest) {
       Accept: "application/vnd.github.v3+json",
     };
 
-    const [reposResponse] = await Promise.all([
-      fetch("https://api.github.com/user/repos?sort=updated&per_page=100", { headers }),
+    const [userResponse, reposResponse] = await Promise.all([
       fetch("https://api.github.com/user", { headers }),
+      fetch("https://api.github.com/user/repos?sort=updated&per_page=100", { headers }),
     ]);
 
+    if (!userResponse.ok) {
+      return NextResponse.json({ error: "Failed to fetch user" }, { status: userResponse.status });
+    }
     if (!reposResponse.ok) {
       return NextResponse.json({ error: "Failed to fetch repos" }, { status: reposResponse.status });
     }
 
+    const userData = await userResponse.json() as Record<string, unknown>;
     const reposData = await reposResponse.json() as Record<string, unknown>[];
     const repos: GitHubRepo[] = reposData.map(normalizeRepo);
+
+    const username = userData.login as string;
 
     const commits: GitHubCommit[] = [];
     const repoCommits = await Promise.all(
@@ -48,7 +54,12 @@ export async function GET(request: NextRequest) {
 
     const stats = normalizeStats(repos, commits);
 
+    const languages = Array.from(new Set(repos.map(r => r.language).filter((l): l is string => l !== null)));
+
     return NextResponse.json({
+      username,
+      repoCount: repos.length,
+      languages,
       repos,
       commits: commits.slice(0, 100),
       stats,
